@@ -1,0 +1,38 @@
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from accelerate import init_empty_weights, load_checkpoint_and_dispatch
+import torch
+
+# Set your model path
+model_path = "D:/Models/smaug72b"
+
+# Load tokenizer
+tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
+
+# Initialize empty model
+with init_empty_weights():
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
+
+# Load model weights with offloading to CPU
+model = load_checkpoint_and_dispatch(
+    model,
+    model_path,
+    device_map="auto",  # this spreads across GPU and CPU
+    offload_folder="offload",
+    offload_state_dict=True,
+    no_split_module_classes=["GPTNeoXLayer"]
+)
+
+# Run a test prompt
+prompt = "Explain how photosynthesis works in simple terms."
+inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+
+with torch.no_grad():
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=200,
+        temperature=0.7,
+        top_p=0.9,
+        do_sample=True
+    )
+
+print(tokenizer.decode(outputs[0], skip_special_tokens=True))
