@@ -1,0 +1,69 @@
+# maurogpt_app.py – Streamlit UI for MauroGPT (with enhanced keyword highlighting)
+
+import os
+import re
+import streamlit as st
+from pathlib import Path
+from maurogpt import preview_context_for_engineer, generate_prompt_from_question
+
+# === UI Setup ===
+st.set_page_config(page_title="MauroGPT", layout="wide")
+st.title("MauroGPT: INL Context-Aware Document Assistant")
+
+st.markdown("""
+Type a question below. MauroGPT will retrieve the most relevant document excerpts, sorted by similarity score, along with PDF file names and page numbers. Keywords that match your question will be highlighted.
+""")
+
+# === Input Form ===
+with st.form(key="query_form"):
+    user_question = st.text_input("Enter your question:", placeholder="e.g., How many heat pipes are in the NTR?")
+    submit_button = st.form_submit_button(label="Get Citations")
+
+# === Helper: Strip stopwords from question ===
+STOPWORDS = set([
+    "what", "where", "when", "who", "how", "why",
+    "is", "are", "was", "were", "the", "of", "a", "an", "in", "on", "to", "from",
+    "that", "this", "which", "and", "or", "at", "by", "for", "with", "it",
+    "as", "be", "has", "have", "had", "do", "does", "did",
+    "can", "will", "may", "should", "could", "would", "if"
+])
+
+def extract_keywords(text):
+    words = re.findall(r"\b\w+\b", text.lower())
+    return [w for w in words if w not in STOPWORDS and len(w) > 2]
+
+def highlight_keywords(text, keywords):
+    for kw in keywords:
+        text = re.sub(rf"(?<!\\w)({re.escape(kw)})(?!\\w)", r"<span style='background-color: #ffe0b3'>\1</span>", text, flags=re.IGNORECASE)
+    return text
+
+# === Run MauroGPT ===
+if submit_button and user_question:
+    st.write(f"### MauroGPT Results for: `{user_question}`")
+    st.write("---")
+
+    # Generate prompt with raw chunks
+    prompt = generate_prompt_from_question(user_question)
+
+    if prompt:
+        # Extract context section
+        context_section = prompt.split("Context:\n", 1)[-1].split("\n\nQuestion:", 1)[0]
+        chunks = context_section.strip().split("\n\n")
+
+        # Get keywords from the question
+        keywords = extract_keywords(user_question)
+
+        # Parse and highlight
+        for i, chunk in enumerate(chunks, 1):
+            lines = chunk.strip().split("\n", 1)
+            if len(lines) == 2:
+                header, content = lines
+                highlighted = highlight_keywords(content, keywords)
+                st.markdown(f"**[{i}] {header}**", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-family: monospace;'>{highlighted}</div>", unsafe_allow_html=True)
+                st.markdown("---")
+    else:
+        st.warning("No context available. Check your database or query.")
+
+elif submit_button and not user_question:
+    st.warning("Please enter a question before submitting.")
